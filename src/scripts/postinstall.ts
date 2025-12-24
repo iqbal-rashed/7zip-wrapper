@@ -5,7 +5,7 @@
 import fs from 'fs';
 import path from 'path';
 import https from 'https';
-import { DEFAULT_BIN_DIR } from '@/utils/paths';
+import { DEFAULT_BIN_DIR } from '../utils/paths';
 
 // Find package root
 
