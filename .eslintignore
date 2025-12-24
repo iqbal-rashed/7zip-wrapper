@@ -1,0 +1,5 @@
+dist
+node_modules
+binaries
+coverage
+*.d.ts

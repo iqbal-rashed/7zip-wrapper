@@ -1,0 +1,178 @@
+name: Mirror 7-Zip console builds (weekly, update latest release)
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly (Mondays) — cron is UTC
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: 7zip-mirror-latest
+  cancel-in-progress: false
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl xz-utils p7zip-full
+
+      - name: Resolve upstream latest 7-Zip version
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          html="$(curl -fsSL https://www.7-zip.org/download.html)"
+          latest="$(printf "%s" "$html" \
+            | grep -oE '7z[0-9]{4}-linux-x64\.tar\.xz' \
+            | sed -E 's/^7z([0-9]{4}).*/\1/' \
+            | sort -nr \
+            | head -n1)"
+
+          if [[ -z "${latest:-}" ]]; then
+            echo "Failed to determine upstream latest version." >&2
+            exit 1
+          fi
+
+          echo "version=$latest" >> "$GITHUB_OUTPUT"
+          echo "title=7-Zip ${latest:0:2}.${latest:2:2} (latest)" >> "$GITHUB_OUTPUT"
+
+      - name: Decide whether to update (compare to existing latest release)
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          upstream="${{ steps.ver.outputs.version }}"
+
+          current=""
+          if gh release view latest >/dev/null 2>&1; then
+            body="$(gh release view latest --json body --jq .body || true)"
+            current="$(printf "%s" "$body" | grep -oE 'Upstream version: [0-9]{4}' | head -n1 | awk '{print $3}' || true)"
+          fi
+
+          echo "Upstream: $upstream"
+          echo "Current : ${current:-<none>}"
+
+          if [[ -n "${current:-}" && "$current" == "$upstream" ]]; then
+            echo "should_update=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_update=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download, extract, and rename into dist/
+        if: steps.gate.outputs.should_update == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ver="${{ steps.ver.outputs.version }}"
+          base="https://www.7-zip.org/a"
+
+          rm -rf work dist
+          mkdir -p work/downloads work/extract dist
+
+          download() {
+            local url="$1" out="$2"
+            echo "Downloading: $url"
+            curl -fsSL -L "$url" -o "$out"
+          }
+
+          extract_tarxz() {
+            local archive="$1" dest="$2"
+            mkdir -p "$dest"
+            tar -xJf "$archive" -C "$dest"
+          }
+
+          extract_7z() {
+            local archive="$1" dest="$2"
+            mkdir -p "$dest"
+            7z x "$archive" "-o$dest" -y >/dev/null
+          }
+
+          # Pick a console binary (prefer 7zz, then 7za, then 7z), copy and mark executable.
+          pick_and_copy_unix() {
+            local src="$1" out="$2"
+            local f=""
+            for c in 7zz 7za 7z; do
+              f="$(find "$src" -type f -name "$c" | head -n1 || true)"
+              [[ -n "$f" ]] && break
+            done
+            if [[ -z "$f" ]]; then
+              echo "Could not find 7zz/7za/7z in $src" >&2
+              find "$src" -maxdepth 4 -type f | head -n 200 >&2
+              exit 1
+            fi
+            cp "$f" "dist/$out"
+            chmod +x "dist/$out"
+          }
+
+          # --- Linux + macOS archives ---
+          for platform in linux-x64 linux-x86 linux-arm64 linux-arm mac; do
+            arc="7z${ver}-${platform}.tar.xz"
+            download "$base/$arc" "work/downloads/$arc"
+            extract_tarxz "work/downloads/$arc" "work/extract/$platform"
+            pick_and_copy_unix "work/extract/$platform" "${platform}-7za"
+          done
+
+          # --- Windows extra archive (NO DLLs; win-x86/x64/arm64 7za.exe if present) ---
+          arc="7z${ver}-extra.7z"
+          download "$base/$arc" "work/downloads/$arc"
+          extract_7z "work/downloads/$arc" "work/extract/win-extra"
+
+          [[ -f work/extract/win-extra/7za.exe ]] && cp work/extract/win-extra/7za.exe dist/win-x86-7za.exe
+          [[ -f work/extract/win-extra/x64/7za.exe ]] && cp work/extract/win-extra/x64/7za.exe dist/win-x64-7za.exe
+          [[ -f work/extract/win-extra/arm64/7za.exe ]] && cp work/extract/win-extra/arm64/7za.exe dist/win-arm64-7za.exe
+
+          # Checksums
+          (cd dist && sha256sum * > SHA256SUMS.txt)
+
+      - name: Update moving tag "latest" to this commit
+        if: steps.gate.outputs.should_update == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f latest
+          git push -f origin latest
+
+      - name: Create or update release "latest" and replace assets
+        if: steps.gate.outputs.should_update == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          title="${{ steps.ver.outputs.title }}"
+          ver="${{ steps.ver.outputs.version }}"
+
+          body=$'Moving "latest" release for 7-Zip console builds.\n\n'
+          body+=$'Upstream version: '"$ver"$'\n'
+          body+=$'Source: https://www.7-zip.org/\n\n'
+          body+=$'Assets are rebuilt and replaced whenever upstream version changes.\n'
+
+          if gh release view latest >/dev/null 2>&1; then
+            gh release edit latest --title "$title" --notes "$body"
+          else
+            gh release create latest --title "$title" --notes "$body"
+          fi
+
+          # Upload new assets (clobber replaces same-name assets)
+          gh release upload latest dist/* --clobber
