@@ -1,4 +1,4 @@
-name: Mirror 7-Zip console builds (weekly)
+name: Mirror 7-Zip console builds (weekly, update latest release)
 
 on:
   workflow_dispatch:
@@ -21,7 +21,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # needed to force-move tag
+          fetch-depth: 0
 
       - name: Install tools
         run: |
@@ -65,7 +65,7 @@ jobs:
           fi
 
           echo "Upstream: $upstream"
-          echo "Current (from release body): ${current:-<none>}"
+          echo "Current : ${current:-<none>}"
 
           if [[ -n "${current:-}" && "$current" == "$upstream" ]]; then
             echo "should_update=false" >> "$GITHUB_OUTPUT"
@@ -128,7 +128,7 @@ jobs:
             pick_and_copy_unix "work/extract/$platform" "${platform}-7za"
           done
 
-          # --- Windows extra archive (no DLLs; win-x86/x64/arm64 7za.exe if present) ---
+          # --- Windows extra archive (NO DLLs; win-x86/x64/arm64 7za.exe if present) ---
           arc="7z${ver}-extra.7z"
           download "$base/$arc" "work/downloads/$arc"
           extract_7z "work/downloads/$arc" "work/extract/win-extra"
@@ -140,7 +140,7 @@ jobs:
           # Checksums
           (cd dist && sha256sum * > SHA256SUMS.txt)
 
-      - name: Force-move tag "latest" to this commit
+      - name: Update moving tag "latest" to this commit
         if: steps.gate.outputs.should_update == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -149,24 +149,30 @@ jobs:
           set -euo pipefail
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
           git tag -f latest
           git push -f origin latest
 
-      - name: Create/Update GitHub Release (tag: latest) and replace assets
+      - name: Create or update release "latest" and replace assets
         if: steps.gate.outputs.should_update == 'true'
-        uses: ncipollo/release-action@v1
-        with:
-          tag: latest
-          name: ${{ steps.ver.outputs.title }}
-          body: |
-            Moving "latest" release for 7-Zip console builds.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
 
-            Upstream version: ${{ steps.ver.outputs.version }}
-            Source: https://www.7-zip.org/
+          title="${{ steps.ver.outputs.title }}"
+          ver="${{ steps.ver.outputs.version }}"
 
-            Assets are rebuilt and replaced whenever upstream version changes.
-          allowUpdates: true
-          replacesArtifacts: true
-          artifacts: "dist/*"
-          makeLatest: true
+          body=$'Moving "latest" release for 7-Zip console builds.\n\n'
+          body+=$'Upstream version: '"$ver"$'\n'
+          body+=$'Source: https://www.7-zip.org/\n\n'
+          body+=$'Assets are rebuilt and replaced whenever upstream version changes.\n'
+
+          if gh release view latest >/dev/null 2>&1; then
+            gh release edit latest --title "$title" --notes "$body"
+          else
+            gh release create latest --title "$title" --notes "$body"
+          fi
+
+          # Upload new assets (clobber replaces same-name assets)
+          gh release upload latest dist/* --clobber
