@@ -1,4 +1,4 @@
-name: Mirror 7-Zip console builds (weekly, moving latest)
+name: Mirror 7-Zip console builds (weekly)
 
 on:
   workflow_dispatch:
