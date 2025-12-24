@@ -1,0 +1,166 @@
+name: Mirror 7-Zip console builds (weekly)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Upstream version digits (e.g. 2501). Leave blank to auto-detect."
+        required: false
+        default: ""
+  schedule:
+    # Weekly (Mondays) — cron is in UTC
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl xz-utils p7zip-full
+
+      - name: Resolve latest 7-Zip version
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Optional manual override
+          input_ver="${{ github.event.inputs.version }}"
+          if [[ -n "${input_ver:-}" ]]; then
+            latest="$input_ver"
+          else
+            html="$(curl -fsSL https://www.7-zip.org/download.html)"
+            latest="$(printf "%s" "$html" \
+              | grep -oE '7z[0-9]{4}-linux-x64\.tar\.xz' \
+              | sed -E 's/^7z([0-9]{4}).*/\1/' \
+              | sort -nr \
+              | head -n1)"
+          fi
+
+          if [[ -z "${latest:-}" ]]; then
+            echo "Failed to determine latest version." >&2
+            exit 1
+          fi
+
+          tag="7z${latest}"
+          title="7-Zip ${latest:0:2}.${latest:2:2}"
+
+          echo "version=$latest" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag"       >> "$GITHUB_OUTPUT"
+          echo "title=$title"   >> "$GITHUB_OUTPUT"
+
+      - name: Skip if release already exists
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${{ steps.ver.outputs.tag }}"
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "Release $tag already exists. Skipping."
+          else
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download, extract, and rename into dist/
+        if: steps.gate.outputs.should_release == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          ver="${{ steps.ver.outputs.version }}"
+          base="https://www.7-zip.org/a"
+
+          rm -rf work dist
+          mkdir -p work/downloads work/extract dist
+
+          download() {
+            local url="$1" out="$2"
+            echo "Downloading: $url"
+            curl -fsSL -L "$url" -o "$out"
+          }
+
+          extract_tarxz() {
+            local archive="$1" dest="$2"
+            mkdir -p "$dest"
+            tar -xJf "$archive" -C "$dest"
+          }
+
+          extract_7z() {
+            local archive="$1" dest="$2"
+            mkdir -p "$dest"
+            7z x "$archive" "-o$dest" -y >/dev/null
+          }
+
+          # Pick a console binary (prefer 7zz, then 7za, then 7z), copy and mark executable.
+          pick_and_copy_unix() {
+            local src="$1" out="$2"
+            local f=""
+            for c in 7zz 7za 7z; do
+              f="$(find "$src" -type f -name "$c" | head -n1 || true)"
+              [[ -n "$f" ]] && break
+            done
+            if [[ -z "$f" ]]; then
+              echo "Could not find 7zz/7za/7z in $src" >&2
+              find "$src" -maxdepth 3 -type f | head -n 200 >&2
+              exit 1
+            fi
+            cp "$f" "dist/$out"
+            chmod +x "dist/$out"
+          }
+
+          # --- Linux + macOS archives (your list) ---
+          for platform in linux-x64 linux-x86 linux-arm64 linux-arm mac; do
+            arc="7z${ver}-${platform}.tar.xz"
+            download "$base/$arc" "work/downloads/$arc"
+            extract_tarxz "work/downloads/$arc" "work/extract/$platform"
+            # Rename like: linux-x86-7za, linux-x64-7za, mac-7za, etc.
+            pick_and_copy_unix "work/extract/$platform" "${platform}-7za"
+          done
+
+          # --- Windows extra archive (your list) ---
+          arc="7z${ver}-extra.7z"
+          download "$base/$arc" "work/downloads/$arc"
+          extract_7z "work/downloads/$arc" "work/extract/windows-extra"
+
+          # Copy 32-bit and 64-bit if present
+          [[ -f work/extract/windows-extra/7za.exe ]] && cp work/extract/windows-extra/7za.exe dist/windows-x86-7za.exe
+          [[ -f work/extract/windows-extra/x64/7za.exe ]] && cp work/extract/windows-extra/x64/7za.exe dist/windows-x64-7za.exe
+
+          # Also include common DLL/EXE companions if present (renamed with arch prefix)
+          for f in 7z.dll 7za.dll 7z.exe 7za.exe; do
+            [[ -f "work/extract/windows-extra/$f" ]] && cp "work/extract/windows-extra/$f" "dist/windows-x86-$f"
+            [[ -f "work/extract/windows-extra/x64/$f" ]] && cp "work/extract/windows-extra/x64/$f" "dist/windows-x64-$f"
+          done
+
+          # Checksums
+          (cd dist && sha256sum * > SHA256SUMS.txt)
+
+      - name: Create GitHub Release
+        if: steps.gate.outputs.should_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: ${{ steps.ver.outputs.title }}
+          body: |
+            Automated weekly mirror of 7-Zip console builds.
+
+            Upstream source:
+            - https://www.7-zip.org/
+
+            Includes repackaged/renamed binaries and SHA256SUMS.txt.
+          files: |
+            dist/*
