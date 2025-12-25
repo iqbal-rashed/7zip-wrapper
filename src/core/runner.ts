@@ -3,9 +3,9 @@
  */
 
 import { spawn, type ChildProcess } from 'child_process';
-import {  ensureBinary } from './binary';
+import { ensureBinaryPath } from './binary';
 import { parseZipWrapperError, ZipWrapperError, TimeoutError } from './errors';
-import { EXIT_CODES,  DEFAULT_TIMEOUT_MS } from './constants';
+import { EXIT_CODES, DEFAULT_TIMEOUT_MS } from './constants';
 import type {
   ExtendedExecOptions,
   ArchiveResult,
@@ -38,8 +38,8 @@ export function spawnCommand(
   args: string[],
   options?: ExtendedExecOptions & { archivePath?: string }
 ): ChildProcess {
-  const binaryPath = ensureBinary(options?.binaryPath);
-  
+  const binaryPath = ensureBinaryPath(options?.binaryPath);
+
   try {
     return spawn(binaryPath, args, {
       ...options,
@@ -58,7 +58,7 @@ export async function run(
   args: string[],
   options?: ExtendedExecOptions & { archivePath?: string }
 ): Promise<ArchiveResult> {
-  const startTime = Date.now();
+  // const startTime = Date.now();
   const timeout = options?.timeout ?? DEFAULT_TIMEOUT_MS;
 
   return new Promise((resolve, reject) => {
@@ -111,7 +111,7 @@ export async function run(
 
       const stdout = Buffer.concat(stdoutChunks).toString('utf-8');
       const stderr = Buffer.concat(stderrChunks).toString('utf-8');
-      
+
       const result: ArchiveResult = {
         success: code === EXIT_CODES.SUCCESS,
         command: `7za ${args.join(' ')}`, // Simplified command string

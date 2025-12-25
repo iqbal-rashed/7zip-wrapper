@@ -1,6 +1,6 @@
 {
   "name": "7zip-wrapper",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "A comprehensive, feature-complete Node.js wrapper for 7-Zip with TypeScript support, bundled binaries, and cross-platform compatibility.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

@@ -15,6 +15,7 @@ import {
   BinaryNotFoundError,
   ArchiveNotFoundError,
   PasswordRequiredError,
+  DEFAULT_BIN_DIR,
 } from '../src/index';
 
 // Import internals for unit testing
@@ -34,11 +35,7 @@ import {
   normalizePaths,
 } from '../src/utils/helpers';
 
-import {
-  EXIT_CODES,
-  SUPPORTED_READ_FORMATS,
-  SUPPORTED_WRITE_FORMATS,
-} from '../src/core/constants';
+import { EXIT_CODES, SUPPORTED_READ_FORMATS, SUPPORTED_WRITE_FORMATS } from '../src/core/constants';
 
 // Import binary internals
 import { getBinaryPath, isBinaryAvailable, getBinaryInfo } from '../src/core/binary';
@@ -51,9 +48,9 @@ describe('7zip-wrapper', () => {
     });
 
     it('should create instance with custom binary', () => {
-      const zip = new ZipWrapper('/path/to/binary');
+      const zip = new ZipWrapper({ binaryPath: path.join(DEFAULT_BIN_DIR, '7za.exe') });
       expect(zip).toBeDefined();
-      expect(zip.binaryPath).toBe('/path/to/binary');
+      expect(zip.binaryPath).toBe(path.join(DEFAULT_BIN_DIR, '7za.exe'));
     });
 
     it('should have all expected methods', () => {
@@ -320,10 +317,10 @@ describe('7zip-wrapper', () => {
     it('should create archive', async () => {
       const { add } = await import('../src/index');
       // Use cwd to ensure paths in archive are relative/simple
-      const result = await add(testArchive, testFileName, { 
-        type: '7z', 
+      const result = await add(testArchive, testFileName, {
+        type: '7z',
         level: 5,
-        cwd: tmpDir 
+        cwd: tmpDir,
       });
       expect(result.success).toBe(true);
       expect(fs.existsSync(testArchive)).toBe(true);
@@ -336,7 +333,7 @@ describe('7zip-wrapper', () => {
       expect(result.entries).toBeDefined();
       expect(result.entries.length).toBeGreaterThan(0);
       // Verify path is simple
-      expect(result.entries.some(e => e.path === testFileName)).toBe(true);
+      expect(result.entries.some((e) => e.path === testFileName)).toBe(true);
     });
 
     it('should extract archive', async () => {
@@ -354,46 +351,46 @@ describe('7zip-wrapper', () => {
     });
 
     it('should update archive', async () => {
-        const { update, list } = await import('../src/index');
-        
-        const result = await update(testArchive, {
-            add: [newFileName],
-            cwd: tmpDir
-        });
-        expect(result.success).toBe(true);
+      const { update, list } = await import('../src/index');
 
-        const listResult = await list(testArchive);
-        // Should have both files now (exclude the archive itself if listed)
-        const files = listResult.entries.filter(e => !e.isDirectory && !e.path.endsWith('test.7z'));
-        
-        if (files.length !== 2) {
-             // force fail with detail
-             expect(files.map(e => e.path).sort()).toEqual([newFileName, testFileName].sort());
-        }
-        expect(files.length).toBe(2);
-        expect(files.map(e => e.path)).toContain(newFileName);
-        expect(files.map(e => e.path)).toContain(testFileName);
+      const result = await update(testArchive, {
+        add: [newFileName],
+        cwd: tmpDir,
+      });
+      expect(result.success).toBe(true);
+
+      const listResult = await list(testArchive);
+      // Should have both files now (exclude the archive itself if listed)
+      const files = listResult.entries.filter((e) => !e.isDirectory && !e.path.endsWith('test.7z'));
+
+      if (files.length !== 2) {
+        // force fail with detail
+        expect(files.map((e) => e.path).sort()).toEqual([newFileName, testFileName].sort());
+      }
+      expect(files.length).toBe(2);
+      expect(files.map((e) => e.path)).toContain(newFileName);
+      expect(files.map((e) => e.path)).toContain(testFileName);
     });
 
     it('should delete from archive', async () => {
-        const { deleteFiles, list } = await import('../src/index');
-        // Delete the first file
-        const result = await deleteFiles(testArchive, [testFileName]);
-        expect(result.success).toBe(true);
+      const { deleteFiles, list } = await import('../src/index');
+      // Delete the first file
+      const result = await deleteFiles(testArchive, [testFileName]);
+      expect(result.success).toBe(true);
 
-        const listResult = await list(testArchive);
-        const files = listResult.entries.filter(e => !e.isDirectory && !e.path.endsWith('test.7z'));
-        
-        expect(files.length).toBe(1);
-        expect(files[0].path).toBe(newFileName);
+      const listResult = await list(testArchive);
+      const files = listResult.entries.filter((e) => !e.isDirectory && !e.path.endsWith('test.7z'));
+
+      expect(files.length).toBe(1);
+      expect(files[0].path).toBe(newFileName);
     });
 
     it('should hash file', async () => {
-        const { hash } = await import('../src/index');
-        // Hash a file that exists
-        const result = await hash([path.join(tmpDir, testFileName)]);
-        // Hashes is a Record<string, string>
-        expect(Object.keys(result.hashes).length).toBeGreaterThan(0);
+      const { hash } = await import('../src/index');
+      // Hash a file that exists
+      const result = await hash([path.join(tmpDir, testFileName)]);
+      // Hashes is a Record<string, string>
+      expect(Object.keys(result.hashes).length).toBeGreaterThan(0);
     });
   });
 });

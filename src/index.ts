@@ -36,10 +36,12 @@ export type {
   RenameOptions,
   ExtendedExecOptions,
   WildcardPattern,
-} from './types/index.js';
+} from './types/index';
 
 // Export compression presets
-export { COMPRESSION_PRESETS } from './types/index.js';
+export { COMPRESSION_PRESETS } from './types/index';
+
+export { DEFAULT_BIN_DIR, PACKAGE_ROOT } from './utils/paths';
 
 // Export core commands
 export {
@@ -72,9 +74,21 @@ export {
   parseZipWrapperError,
 } from './core/errors';
 
+// Export binary utilities
+export {
+  ensureBinary,
+  downloadBundledBinary,
+  verifyBinary,
+  getPath,
+  getBinaryInfo,
+  clearBinaryCache,
+  setCachePath,
+} from './core/binary';
+
 import { Readable } from 'stream';
 // Import for class methods
 import * as commands from './core/commands';
+import { ensureBinary, ensureBinaryPath, getPath, setCachePath } from './core/binary';
 import type {
   AddOptions,
   ExtractOptions,
@@ -86,7 +100,8 @@ import type {
   HashResult,
   ArchiveResult,
   CommandOptions,
-} from './types/index.js';
+} from './types/index';
+import { ZipWrapperOptions } from './types/options';
 
 /**
  * Main ZipWrapper class for object-oriented usage
@@ -94,10 +109,10 @@ import type {
  * @example
  * ```typescript
  * const zip = new ZipWrapper();
- * 
+ *
  * // Create archive
  * await zip.add('backup.7z', ['src/', 'package.json']);
- * 
+ *
  * // Extract archive
  * await zip.extract('backup.7z', { outputDir: 'restored/' });
  * ```
@@ -105,24 +120,26 @@ import type {
 export class ZipWrapper {
   /**
    * Create a new ZipWrapper instance
-   * @param binaryPath - Optional custom path to 7za binary
+   * @param options - Optional wrapper options including `binaryPath`
+   * @throws {Error} If the resolved binary path does not exist or is not executable
    */
-  constructor(public binaryPath?: string) {}
+
+  public binaryPath = getPath();
+
+  constructor(options?: ZipWrapperOptions) {
+    if (options?.binaryPath) {
+      const binFile = ensureBinaryPath(options.binaryPath);
+      setCachePath(binFile);
+    } else {
+      // Ensure default/bundled binary exists (sync)
+      ensureBinary();
+    }
+
+    this.binaryPath = getPath();
+  }
 
   /**
    * Add files to archive
-   * @param archive - Path to the archive file
-   * @param files - Files or directories to add (supports wildcards)
-   * @param options - Compression options
-   * 
-   * @example
-   * ```typescript
-   * await zip.add('archive.7z', 'src/', { 
-   *   level: 9,
-   *   method: 'lzma2',
-   *   password: 'secret'
-   * });
-   * ```
    */
   async add(
     archive: string,
@@ -184,7 +201,12 @@ export class ZipWrapper {
    * @param stream Input stream
    * @param options Compression options
    */
-  async addFromStream(archive: string, filename: string, stream: Readable, options?: AddOptions): Promise<void> {
+  async addFromStream(
+    archive: string,
+    filename: string,
+    stream: Readable,
+    options?: AddOptions
+  ): Promise<void> {
     return commands.addFromStream(archive, filename, stream, options);
   }
 
@@ -204,7 +226,11 @@ export class ZipWrapper {
    * @param filename Filename to extract
    * @returns Promise resolving to Buffer of file content
    */
-  async extractToBuffer(archive: string, filename: string, options?: CommandOptions): Promise<Buffer> {
+  async extractToBuffer(
+    archive: string,
+    filename: string,
+    options?: CommandOptions
+  ): Promise<Buffer> {
     return commands.extractToBuffer(archive, filename, options);
   }
 
@@ -213,7 +239,7 @@ export class ZipWrapper {
    * @param files - Files to hash (e.g. `['file.txt']` or `'*.txt'`)
    * @param hashType - Hash algorithm (default: 'crc32')
    * @returns Map of file paths to hashes
-   * 
+   *
    * @example
    * ```typescript
    * const hashes = await zip.hash(['file.txt'], 'sha256');

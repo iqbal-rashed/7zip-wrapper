@@ -145,6 +145,10 @@ export interface ExtendedExecOptions extends ExecOptions {
   onProgress?: ProgressCallback;
 }
 
+export interface ZipWrapperOptions {
+  binaryPath?: string;
+}
+
 /**
  * Generic command options
  */

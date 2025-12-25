@@ -3,13 +3,13 @@
  */
 
 import fs from 'fs';
-import { 
-  spawnCommand, 
-  run, 
-  parseListOutput, 
-  parseHashOutput, 
+import {
+  spawnCommand,
+  run,
+  parseListOutput,
+  parseHashOutput,
   parseTestOutput,
-  buildArgs 
+  buildArgs,
 } from './runner';
 import type { Readable } from 'stream';
 import { ArchiveNotFoundError, ZipWrapperError } from './errors';
@@ -46,11 +46,11 @@ export async function addFromStream(
   options: AddOptions = {}
 ): Promise<void> {
   const switches: string[] = [`-si${filename}`]; // -si{name} reads from stdin
-  
+
   if (options.password) switches.push(`-p${options.password}`);
   if (options.level) switches.push(`-mx=${options.level}`);
   if (options.method) switches.push(`-m0=${options.method}`);
-  
+
   // Basic switches
   switches.push(SWITCHES.YES);
 
@@ -61,7 +61,7 @@ export async function addFromStream(
       const child = spawnCommand(args, { ...options, archivePath: archive });
 
       sourceStream.pipe(child.stdin!);
-      
+
       child.on('close', (code) => {
         if (code === 0) resolve();
         else reject(new Error(`7-Zip exited with code ${code}`));
@@ -84,15 +84,15 @@ export function extractToStream(
   options: CommandOptions = {}
 ): Readable {
   validateArchiveExists(archive);
-  
+
   const switches: string[] = ['-so']; // -so writes to stdout
   if (options.password) switches.push(`-p${options.password}`);
   switches.push(SWITCHES.YES);
-  
+
   const args = buildArgs(COMMANDS.EXTRACT, switches, archive, [filename]);
-  
+
   const child = spawnCommand(args, { ...options, archivePath: archive });
-  
+
   if (!child.stdout) {
     throw new ZipWrapperError('Failed to get stdout from 7-Zip process');
   }
@@ -104,12 +104,12 @@ export function extractToStream(
  * Extract file to buffer
  */
 export async function extractToBuffer(
-  archive: string, 
-  filename: string, 
+  archive: string,
+  filename: string,
   options: CommandOptions = {}
 ): Promise<Buffer> {
   const stream = extractToStream(archive, filename, options);
-  
+
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     stream.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
@@ -219,10 +219,7 @@ export async function add(
 /**
  * Extract files from archive
  */
-export async function extract(
-  archive: string,
-  options?: ExtractOptions
-): Promise<ArchiveResult> {
+export async function extract(archive: string, options?: ExtractOptions): Promise<ArchiveResult> {
   validateArchiveExists(archive);
 
   const switches: string[] = [SWITCHES.YES];
@@ -278,10 +275,7 @@ export async function extract(
 /**
  * List archive contents
  */
-export async function list(
-  archive: string,
-  options?: ListOptions
-): Promise<ListResult> {
+export async function list(archive: string, options?: ListOptions): Promise<ListResult> {
   validateArchiveExists(archive);
 
   const switches: string[] = [SWITCHES.TECH_INFO];
@@ -314,10 +308,7 @@ export async function list(
 /**
  * Update existing archive
  */
-export async function update(
-  archive: string,
-  options: UpdateOptions
-): Promise<ArchiveResult> {
+export async function update(archive: string, options: UpdateOptions): Promise<ArchiveResult> {
   validateArchiveExists(archive);
 
   const switches: string[] = [SWITCHES.YES];
@@ -364,10 +355,7 @@ export async function deleteFiles(
 /**
  * Test archive integrity
  */
-export async function test(
-  archive: string,
-  password?: string
-): Promise<TestResult> {
+export async function test(archive: string, password?: string): Promise<TestResult> {
   validateArchiveExists(archive);
 
   const switches: string[] = [SWITCHES.TIMESTAMPS];
@@ -504,10 +492,7 @@ export async function convert(
 /**
  * Benchmark compression
  */
-export async function benchmark(
-  methods?: string[],
-  iterations?: number
-): Promise<ArchiveResult> {
+export async function benchmark(methods?: string[], iterations?: number): Promise<ArchiveResult> {
   const switches: string[] = [SWITCHES.VERBOSE];
 
   if (methods) {

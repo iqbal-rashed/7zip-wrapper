@@ -3,9 +3,11 @@
  */
 
 import fs from 'fs';
+import https from 'https';
 import path from 'path';
-import type { ArchiveEntry } from '../types/index.js';
-import { EXTENSION_TO_FORMAT, SUPPORTED_READ_FORMATS } from '../core/constants.js';
+import type { ArchiveEntry } from '../types/index';
+import { EXTENSION_TO_FORMAT, SUPPORTED_READ_FORMATS } from '../core/constants';
+import { list } from '../core/commands';
 
 /**
  * Check if a path exists
@@ -239,8 +241,6 @@ export async function findInArchive(
   pattern: string,
   caseSensitive = false
 ): Promise<ArchiveEntry[]> {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { list } = require('../core/commands.js') as typeof import('../core/commands.js');
   const result = await list(archive);
 
   const regexStr = pattern
@@ -263,8 +263,6 @@ export async function getArchiveStats(archive: string): Promise<{
   compressedSize: number;
   ratio: number;
 }> {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const { list } = require('../core/commands.js') as typeof import('../core/commands.js');
   const result = await list(archive);
 
   return {
@@ -355,3 +353,45 @@ export function getFileModified(filePath: string): Date | null {
     return null;
   }
 }
+
+export const downloadFile = (url: string, dest: string): Promise<void> =>
+  new Promise((resolve, reject) => {
+    https
+      .get(url, (res) => {
+        if (res.statusCode === 301 || res.statusCode === 302) {
+          if (res.headers.location) {
+            downloadFile(res.headers.location, dest).then(resolve).catch(reject);
+            return;
+          }
+        }
+
+        if (res.statusCode !== 200) {
+          reject(new Error(`Download failed with status ${res.statusCode}`));
+          return;
+        }
+
+        const tempPath = `${dest}.download`;
+        const file = fs.createWriteStream(tempPath);
+
+        res.on('error', (err) => {
+          file.destroy();
+          fs.rmSync(tempPath, { force: true });
+          reject(err);
+        });
+
+        file.on('error', (err) => {
+          fs.rmSync(tempPath, { force: true });
+          reject(err);
+        });
+
+        file.on('finish', () => {
+          file.close(() => {
+            fs.renameSync(tempPath, dest);
+            resolve();
+          });
+        });
+
+        res.pipe(file);
+      })
+      .on('error', reject);
+  });

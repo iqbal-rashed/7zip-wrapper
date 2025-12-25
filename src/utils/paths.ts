@@ -1,5 +1,5 @@
-import fs from "fs";
-import path from "path";
+import fs from 'fs';
+import path from 'path';
 
 function findPackageRoot(startDir: string): string {
   let current = startDir;
@@ -15,5 +15,5 @@ function findPackageRoot(startDir: string): string {
   }
 }
 
-const PACKAGE_ROOT = findPackageRoot(__dirname);
+export const PACKAGE_ROOT = findPackageRoot(__dirname);
 export const DEFAULT_BIN_DIR = path.join(PACKAGE_ROOT, 'bin');

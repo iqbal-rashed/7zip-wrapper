@@ -1,8 +1,4 @@
-import { 
-  ZipWrapper, 
-  ZipWrapperError, 
-  BinaryNotFoundError 
-} from '../src/index';
+import { ZipWrapper, ZipWrapperError, BinaryNotFoundError } from '../src/index';
 import path from 'path';
 import fs from 'fs';
 
@@ -18,13 +14,13 @@ async function runAdvancedExample() {
   try {
     const archive = path.join(outputDir, 'node_modules_backup.7z');
     let source = 'node_modules';
-    
+
     // Fallback if node_modules is too small or missing (e.g. fresh clone)
     if (!fs.existsSync(source)) {
       console.log('node_modules not found, using src folder...');
       source = 'src';
     } else {
-        console.log('Compressing node_modules (this might take a moment)...');
+      console.log('Compressing node_modules (this might take a moment)...');
     }
 
     await zip.add(archive, source, {
@@ -33,26 +29,25 @@ async function runAdvancedExample() {
         // progress: { percent, file, total, processed }
         const p = Math.round(progress.percent || 0);
         process.stdout.write(`\rProgress: ${p}% | File: ${progress.file || '...'}`);
-      }
+      },
     });
     console.log(`\nDone! Created ${archive}`);
 
     // Verify/Extract
     console.log('\nVerifying & Extracting...');
     const restoreDir = path.join(outputDir, 'restored_node_modules');
-    
+
     await zip.extract(archive, {
       outputDir: restoreDir,
       onProgress: (progress) => {
         const p = Math.round(progress.percent || 0);
         process.stdout.write(`\rExtracting: ${p}%`);
-      }
+      },
     });
     console.log(`\nExtracted to ${restoreDir}`);
-
   } catch (err) {
     if (err instanceof ZipWrapperError) {
-      console.error('\nError:', err.message); 
+      console.error('\nError:', err.message);
     } else {
       console.error(err);
     }
@@ -75,7 +70,7 @@ async function runAdvancedExample() {
   // 3. Custom Binary Path
   console.log('\n3. Custom Binary (Simulated Failure):');
   try {
-    const customZip = new ZipWrapper('/invalid/path/to/7za');
+    const customZip = new ZipWrapper({ binaryPath: '' });
     await customZip.info('test.7z');
   } catch (error) {
     if (error instanceof BinaryNotFoundError) {
